@@ -1,6 +1,6 @@
 /**
  *
- * Copyright © 2014 Florian Schmaus
+ * Copyright 2015 Florian Schmaus.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,21 +14,23 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.jivesoftware.smackx.pubsub.filter;
 
-package org.jivesoftware.smack.packet;
+import org.jivesoftware.smack.filter.StanzaExtensionFilter;
+import org.jivesoftware.smackx.pubsub.EventElement;
 
 /**
- * Plain stream elements, ie. everything that is <b>not a stanza</b> as defined
- * RFC 6120 8. Stanzas are {@link Message}, {@link Presence} and {@link IQ}.
- * Everything else should sublcass this class instead of {@link Stanza}.
- * <p>
- * It is important to cleanly distinguish between stanzas and non-stanzas. For
- * example plain stream elements don't count into the stanza count of XEP-198
- * Stream Management.
- * </p>
- * 
+ * Filter for stanzas with the PubSub 'event' extension.
+ *
  * @author Florian Schmaus
+ *
  */
-public interface PlainStreamElement extends TopLevelStreamElement {
+public final class EventExtensionFilter extends StanzaExtensionFilter {
+
+    public static final EventExtensionFilter INSTANCE = new EventExtensionFilter();
+
+    private EventExtensionFilter() {
+        super(EventElement.ELEMENT, EventElement.NAMESPACE);
+    }
 
 }

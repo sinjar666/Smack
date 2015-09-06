@@ -66,8 +66,9 @@ import org.jivesoftware.smack.sm.packet.StreamManagement.Resumed;
 import org.jivesoftware.smack.sm.packet.StreamManagement.StreamManagementFeature;
 import org.jivesoftware.smack.sm.predicates.Predicate;
 import org.jivesoftware.smack.sm.provider.ParseStreamManagement;
-import org.jivesoftware.smack.packet.PlainStreamElement;
+import org.jivesoftware.smack.packet.Nonza;
 import org.jivesoftware.smack.packet.XMPPError;
+import org.jivesoftware.smack.proxy.ProxyInfo;
 import org.jivesoftware.smack.util.ArrayBlockingQueueWithShutdown;
 import org.jivesoftware.smack.util.Async;
 import org.jivesoftware.smack.util.PacketParserUtils;
@@ -153,14 +154,6 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
      * 
      */
     private boolean disconnectedButResumeable = false;
-
-    /**
-     * Flag to indicate if the socket was closed intentionally by Smack.
-     * <p>
-     * This boolean flag is used concurrently, therefore it is marked volatile.
-     * </p>
-     */
-    private volatile boolean socketClosed = false;
 
     private boolean usingTLS = false;
 
@@ -337,7 +330,7 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
      * @throws XmppStringprepException 
      */
     public XMPPTCPConnection(CharSequence username, String password, String serviceName) throws XmppStringprepException {
-        this(XMPPTCPConnectionConfiguration.builder().setUsernameAndPassword(username, password).setServiceName(
+        this(XMPPTCPConnectionConfiguration.builder().setUsernameAndPassword(username, password).setXmppDomain(
                                         JidCreate.domainBareFrom(serviceName)).build());
     }
 
@@ -437,10 +430,6 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
         return usingTLS;
     }
 
-    public boolean isSocketClosed() {
-        return socketClosed;
-    }
-
     /**
      * Shuts the current connection down. After this method returns, the connection must be ready
      * for re-use by connect.
@@ -466,18 +455,10 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
         shutdown(true);
     }
 
-    /**
-     * <code>true</code> if this connection is currently disconnecting the session by performing a
-     * shut down.
-     */
-    private volatile boolean shutdownInProgress;
-
     private void shutdown(boolean instant) {
         if (disconnectedButResumeable) {
             return;
         }
-
-        shutdownInProgress = true;
 
         // First shutdown the writer, this will result in a closing stream element getting send to
         // the server
@@ -485,15 +466,20 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
             packetWriter.shutdown(instant);
         }
 
+        try {
+            // After we send the closing stream element, check if there was already a
+            // closing stream element sent by the server or wait with a timeout for a
+            // closing stream element to be received from the server.
+            Exception res = closingStreamReceived.checkIfSuccessOrWait();
+            LOGGER.info("closingstream " + res);
+        } catch (InterruptedException | NoResponseException e) {
+            LOGGER.log(Level.INFO, "Exception while waiting for closing stream element from the server " + this, e);
+        }
+
         if (packetReader != null) {
                 packetReader.shutdown();
         }
 
-        // Set socketClosed to true. This will cause the PacketReader
-        // and PacketWriter to ignore any Exceptions that are thrown
-        // because of a read/write from/to a closed stream.
-        // It is *important* that this is done before socket.close()!
-        socketClosed = true;
         try {
                 socket.close();
         } catch (Exception e) {
@@ -512,7 +498,6 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
             // stream tag, there is no longer a stream to resume.
             smSessionId = null;
         }
-        shutdownInProgress = false;
         authenticated = false;
         connected = false;
         usingTLS = false;
@@ -527,7 +512,7 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
     }
 
     @Override
-    public void send(PlainStreamElement element) throws NotConnectedException, InterruptedException {
+    public void sendNonza(Nonza element) throws NotConnectedException, InterruptedException {
         packetWriter.sendStreamElement(element);
     }
 
@@ -547,6 +532,8 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
     private void connectUsingConfiguration() throws IOException, ConnectionException {
         List<HostAddress> failedAddresses = populateHostAddresses();
         SocketFactory socketFactory = config.getSocketFactory();
+        ProxyInfo proxyInfo = config.getProxyInfo();
+        int timeout = config.getConnectTimeout();
         if (socketFactory == null) {
             socketFactory = SocketFactory.getDefault();
         }
@@ -566,7 +553,12 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
                     final String inetAddressAndPort = inetAddress + " at port " + port;
                     LOGGER.finer("Trying to establish TCP connection to " + inetAddressAndPort);
                     try {
-                        socket.connect(new InetSocketAddress(inetAddress, port), config.getConnectTimeout());
+                        if (proxyInfo == null) {
+                            socket.connect(new InetSocketAddress(inetAddress, port), timeout);
+                        }
+                        else {
+                            proxyInfo.getProxySocketConnection().connect(socket, inetAddress, port, timeout);
+                        }
                     } catch (Exception e) {
                         if (inetAddresses.hasNext()) {
                             continue innerloop;
@@ -816,7 +808,6 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
         connectUsingConfiguration();
 
         // We connected successfully to the servers TCP port
-        socketClosed = false;
         initConnection();
 
         // Wait with SASL auth until the SASL mechanisms have been received
@@ -863,11 +854,9 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
                 return;
             }
 
-            if (config.getSecurityMode() == ConnectionConfiguration.SecurityMode.disabled) {
-                // Do not secure the connection using TLS since TLS was disabled
-                return;
+            if (config.getSecurityMode() != ConnectionConfiguration.SecurityMode.disabled) {
+                sendNonza(new StartTls());
             }
-            send(new StartTls());
         }
         // If TLS is required but the server doesn't offer it, disconnect
         // from the server and throw an error. First check if we've already negotiated TLS
@@ -905,7 +894,7 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
             from = XmppStringUtils.completeJidFrom(localpart, to);
         }
         String id = getStreamId();
-        send(new StreamOpen(to, from, id));
+        sendNonza(new StreamOpen(to, from, id));
         try {
             packetReader.parser = PacketParserUtils.newXmppParser(reader);
         }
@@ -1124,8 +1113,19 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
                         break;
                     case XmlPullParser.END_TAG:
                         if (parser.getName().equals("stream")) {
+                            if (!parser.getNamespace().equals("http://etherx.jabber.org/streams")) {
+                                LOGGER.warning(XMPPTCPConnection.this +  " </stream> but different namespace " + parser.getNamespace());
+                                break;
+                            }
+
+                            // Check if the queue was already shut down before reporting success on closing stream tag
+                            // received. This avoids a race if there is a disconnect(), followed by a connect(), which
+                            // did re-start the queue again, causing this writer to assume that the queue is not
+                            // shutdown, which results in a call to disconnect().
+                            final boolean queueWasShutdown = packetWriter.queue.isShutdown();
                             closingStreamReceived.reportSuccess();
-                            if (shutdownInProgress) {
+
+                            if (queueWasShutdown) {
                                 // We received a closing stream element *after* we initiated the
                                 // termination of the session by sending a closing stream element to
                                 // the server first
@@ -1135,6 +1135,9 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
                                 // sending a closing stream element first. This means that the
                                 // server wants to terminate the session, therefore disconnect
                                 // the connection
+                                LOGGER.info(XMPPTCPConnection.this
+                                                + " received closing </stream> element."
+                                                + " Server wants to terminate the connection, calling disconnect()");
                                 disconnect();
                             }
                         }
@@ -1152,7 +1155,7 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
                 closingStreamReceived.reportFailure(e);
                 // The exception can be ignored if the the connection is 'done'
                 // or if the it was caused because the socket got closed
-                if (!(done || isSocketClosed())) {
+                if (!(done || packetWriter.queue.isShutdown())) {
                     // Close the connection and notify connection listeners of the
                     // error.
                     notifyConnectionError(e);
@@ -1219,9 +1222,14 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
         }
 
         protected void throwNotConnectedExceptionIfDoneAndResumptionNotPossible() throws NotConnectedException {
-            if (done() && !isSmResumptionPossible()) {
+            final boolean done = done();
+            if (done) {
+                final boolean smResumptionPossbile = isSmResumptionPossible();
                 // Don't throw a NotConnectedException is there is an resumable stream available
-                throw new NotConnectedException();
+                if (!smResumptionPossbile) {
+                    throw new NotConnectedException(XMPPTCPConnection.this, "done=" + done
+                                    + " smResumptionPossible=" + smResumptionPossbile);
+                }
             }
         }
 
@@ -1255,8 +1263,8 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
          */
         void shutdown(boolean instant) {
             instantShutdown = instant;
-            shutdownTimestamp = System.currentTimeMillis();
             queue.shutdown();
+            shutdownTimestamp = System.currentTimeMillis();
             try {
                 shutdownDone.checkIfSuccessOrWait();
             }
@@ -1397,17 +1405,6 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
                         LOGGER.log(Level.WARNING, "Exception writing closing stream element", e);
                     }
 
-                    try {
-                        // After we send the closing stream element, check if there was already a
-                        // closing stream element sent by the server or wait with a timeout for a
-                        // closing stream element to be received from the server.
-                        closingStreamReceived.checkIfSuccessOrWait();
-                    } catch (NoResponseException e) {
-                        LOGGER.log(Level.INFO, "No response while waiting for closing stream element from the server (" + getConnectionCounter() + ")", e);
-                    } catch (InterruptedException e) {
-                        LOGGER.log(Level.INFO, "Waiting for closing stream element from the server was interrupted (" + getConnectionCounter() + ")", e);
-                    }
-
                     // Delete the queue contents (hopefully nothing is left).
                     queue.clear();
                 } else if (instantShutdown && isSmEnabled()) {
@@ -1415,19 +1412,15 @@ public class XMPPTCPConnection extends AbstractXMPPConnection {
                     // into the unacknowledgedStanzas queue
                     drainWriterQueueToUnacknowledgedStanzas();
                 }
-
-                try {
-                    writer.close();
-                }
-                catch (Exception e) {
-                    // Do nothing
-                }
-
+                // Do *not* close the writer here, as it will cause the socket
+                // to get closed. But we may want to receive further stanzas
+                // until the closing stream tag is received. The socket will be
+                // closed in shutdown().
             }
             catch (Exception e) {
                 // The exception can be ignored if the the connection is 'done'
                 // or if the it was caused because the socket got closed
-                if (!(done() || isSocketClosed())) {
+                if (!(done() || queue.isShutdown())) {
                     notifyConnectionError(e);
                 } else {
                     LOGGER.log(Level.FINE, "Ignoring Exception in writePackets()", e);

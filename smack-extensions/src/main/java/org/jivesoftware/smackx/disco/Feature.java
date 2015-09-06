@@ -14,8 +14,28 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.jivesoftware.smackx.disco;
 
 /**
- * TODO describe me.
+ * Utility class for Features.
+ *
+ * @author Florian Schmaus
+ *
  */
-package org.jivesoftware.smackx.pep.provider;
+public class Feature {
+
+    public enum Support {
+        optional,
+        recommended,
+        required,
+        ;
+
+        public boolean isRequired() {
+            return this == required;
+        }
+
+        public boolean isNotRequired() {
+            return !isRequired();
+        }
+    }
+}

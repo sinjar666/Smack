@@ -102,7 +102,7 @@ public class SmackIntegrationTestFramework {
                 final Method method = failedTest.testMethod;
                 final String className = method.getDeclaringClass().getName();
                 final String methodName = method.getName();
-                final Exception cause = failedTest.failureReason;
+                final Throwable cause = failedTest.failureReason;
                 LOGGER.severe(className + CLASS_METHOD_SEP + methodName + " failed: " + cause);
             }
             System.exit(2);
@@ -354,7 +354,7 @@ public class SmackIntegrationTestFramework {
 
                 for (Method testMethod : smackIntegrationTestMethods) {
                     final String testPrefix = testClass.getSimpleName() + '.'
-                                    + testMethod.getName() + ": ";
+                                    + testMethod.getName() + " (" + testType + "): ";
                     // Invoke all test methods on the test instance
                     LOGGER.info(testPrefix + "Start");
                     long testStart = System.currentTimeMillis();
@@ -380,10 +380,17 @@ public class SmackIntegrationTestFramework {
                                             null, (TestNotPossibleException) cause));
                             continue;
                         }
-                        Exception nonFatalException = throwFatalException(cause);
+                        Throwable nonFatalFailureReason;
+                        // junit assert's throw an AssertionError if they fail, those should not be
+                        // thrown up, as it would be done by throwFatalException()
+                        if (cause instanceof AssertionError) {
+                            nonFatalFailureReason = cause;
+                        } else {
+                            nonFatalFailureReason = throwFatalException(cause);
+                        }
                         // An integration test failed
                         testRunResult.failedIntegrationTests.add(new FailedTest(testMethod, testStart, testEnd, null,
-                                        nonFatalException));
+                                        nonFatalFailureReason));
                         LOGGER.log(Level.SEVERE, testPrefix + "Failed", e);
                     }
                     catch (IllegalArgumentException | IllegalAccessException e) {
@@ -516,7 +523,7 @@ public class SmackIntegrationTestFramework {
         }
         // @formatter:off
         Builder builder = XMPPTCPConnectionConfiguration.builder()
-                        .setServiceName(config.service)
+                        .setXmppDomain(config.service)
                         .setUsernameAndPassword(accountUsername, accountPassword)
                         .setResource(middlefix + '-' + testRunResult.testRunId)
                         .setSecurityMode(config.securityMode);
@@ -551,7 +558,7 @@ public class SmackIntegrationTestFramework {
             builder.setCustomSSLContext(sc);
         }
         builder.setSecurityMode(config.securityMode);
-        builder.setServiceName(config.service);
+        builder.setXmppDomain(config.service);
         XMPPTCPConnection connection = new XMPPTCPConnection(builder.build());
         connection.connect();
         UsernameAndPassword uap = IntTestUtil.registerAccount(connection);
@@ -559,11 +566,8 @@ public class SmackIntegrationTestFramework {
         return connection;
     }
 
-    private static Exception throwFatalException(Throwable e) throws Error, NotConnectedException, NoResponseException,
+    private static Exception throwFatalException(Throwable e) throws Error, NoResponseException,
                     InterruptedException {
-        if (e instanceof NotConnectedException) {
-            throw (NotConnectedException) e;
-        }
         if (e instanceof NoResponseException) {
             throw (NoResponseException) e;
         }

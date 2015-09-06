@@ -125,14 +125,7 @@ public abstract class ConnectionConfiguration {
         port = builder.port;
 
         proxy = builder.proxy;
-        if (proxy != null) {
-            if (builder.socketFactory != null) {
-                throw new IllegalArgumentException("Can not use proxy together with custom socket factory");
-            }
-            socketFactory = proxy.getSocketFactory();
-        } else {
-            socketFactory = builder.socketFactory;
-        }
+        socketFactory = builder.socketFactory;
 
         securityMode = builder.securityMode;
         keystoreType = builder.keystoreType;
@@ -301,6 +294,15 @@ public abstract class ConnectionConfiguration {
     }
 
     /**
+     * Get the configured proxy information (if any).
+     *
+     * @return the configured proxy information or <code>null</code>.
+     */
+    public ProxyInfo getProxyInfo() {
+        return proxy;
+    }
+
+    /**
      * An enumeration for TLS security modes that are available when making a connection
      * to the XMPP server.
      */
@@ -464,9 +466,21 @@ public abstract class ConnectionConfiguration {
          *
          * @param serviceName the service name
          * @return a reference to this builder.
+         * @deprecated use {@link #setXmppDomain(DomainBareJid)} instead.
          */
+        @Deprecated
         public B setServiceName(DomainBareJid serviceName) {
-            this.xmppServiceDomain = serviceName;
+            return setXmppDomain(serviceName);
+        }
+
+        /**
+         * Set the service name of this XMPP service (i.e., the XMPP domain).
+         *
+         * @param xmppServiceDomain the service name
+         * @return a reference to this builder.
+         */
+        public B setXmppDomain(DomainBareJid xmppServiceDomain) {
+            this.xmppServiceDomain = xmppServiceDomain;
             return getThis();
         }
 

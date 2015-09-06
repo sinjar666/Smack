@@ -14,17 +14,8 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package org.igniterealtime.smack.inttest;
 
-import java.lang.reflect.Method;
-import java.util.List;
-
-public class FailedTest extends TestResult {
-
-    public final Throwable failureReason;
-
-    public FailedTest(Method testMethod, long startTime, long endTime, List<String> logMessages, Throwable failureReason) {
-        super(testMethod, startTime, endTime, logMessages);
-        this.failureReason = failureReason;
-    }
-}
+/**
+ * Filter based on the type of an XMPP address.
+ */
+package org.jivesoftware.smack.filter.jidtype;

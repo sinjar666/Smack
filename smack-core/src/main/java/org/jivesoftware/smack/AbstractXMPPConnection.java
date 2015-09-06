@@ -68,7 +68,7 @@ import org.jivesoftware.smack.packet.ExtensionElement;
 import org.jivesoftware.smack.packet.Presence;
 import org.jivesoftware.smack.packet.Session;
 import org.jivesoftware.smack.packet.StartTls;
-import org.jivesoftware.smack.packet.PlainStreamElement;
+import org.jivesoftware.smack.packet.Nonza;
 import org.jivesoftware.smack.packet.StreamError;
 import org.jivesoftware.smack.packet.XMPPError;
 import org.jivesoftware.smack.parsing.ParsingExceptionCallback;
@@ -301,7 +301,12 @@ public abstract class AbstractXMPPConnection implements XMPPConnection {
         }
     }
 
-    protected ConnectionConfiguration getConfiguration() {
+    /**
+     * Get the connection configuration used by this connection.
+     *
+     * @return the connection configuration.
+     */
+    public ConnectionConfiguration getConfiguration() {
         return config;
     }
 
@@ -335,7 +340,7 @@ public abstract class AbstractXMPPConnection implements XMPPConnection {
     protected abstract void sendStanzaInternal(Stanza packet) throws NotConnectedException, InterruptedException;
 
     @Override
-    public abstract void send(PlainStreamElement element) throws NotConnectedException, InterruptedException;
+    public abstract void sendNonza(Nonza element) throws NotConnectedException, InterruptedException;
 
     @Override
     public abstract boolean isUsingCompression();
@@ -1206,7 +1211,7 @@ public abstract class AbstractXMPPConnection implements XMPPConnection {
             }
         }
         if (logWarning) {
-            LOGGER.log(Level.WARNING, "Connection closed with error", e);
+            LOGGER.log(Level.WARNING, "Connection " + this + " closed with error", e);
         }
         for (ConnectionListener listener : connectionListeners) {
             try {
@@ -1461,7 +1466,14 @@ public abstract class AbstractXMPPConnection implements XMPPConnection {
                 // If the packetListener got removed, then it was never run and
                 // we never received a response, inform the exception callback
                 if (removed && exceptionCallback != null) {
-                    exceptionCallback.processException(NoResponseException.newWith(AbstractXMPPConnection.this, replyFilter));
+                    Exception exception;
+                    if (!isConnected()) {
+                        // If the connection is no longer connected, throw a not connected exception.
+                        exception = new NotConnectedException(AbstractXMPPConnection.this, replyFilter);
+                    } else {
+                        exception = NoResponseException.newWith(AbstractXMPPConnection.this, replyFilter);
+                    }
+                    exceptionCallback.processException(exception);
                 }
             }
         }, timeout, TimeUnit.MILLISECONDS);

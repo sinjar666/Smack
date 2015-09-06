@@ -24,7 +24,7 @@ import org.jivesoftware.smack.SmackException.NoResponseException;
 import org.jivesoftware.smack.SmackException.NotConnectedException;
 import org.jivesoftware.smack.packet.TopLevelStreamElement;
 import org.jivesoftware.smack.packet.Stanza;
-import org.jivesoftware.smack.packet.PlainStreamElement;
+import org.jivesoftware.smack.packet.Nonza;
 
 public class SynchronizationPoint<E extends Exception> {
 
@@ -68,9 +68,9 @@ public class SynchronizationPoint<E extends Exception> {
      * @param request the plain stream element to send.
      * @throws NoResponseException if no response was received.
      * @throws NotConnectedException if the connection is not connected.
-     * @return <code>true</code> if synchronization point was successful, <code>false</code> on failure.
+     * @return <code>null</code> if synchronization point was successful, or the failure Exception.
      */
-    public boolean sendAndWaitForResponse(TopLevelStreamElement request) throws NoResponseException,
+    public E sendAndWaitForResponse(TopLevelStreamElement request) throws NoResponseException,
                     NotConnectedException, InterruptedException {
         assert (state == State.Initial);
         connectionLock.lock();
@@ -79,8 +79,8 @@ public class SynchronizationPoint<E extends Exception> {
                 if (request instanceof Stanza) {
                     connection.sendStanza((Stanza) request);
                 }
-                else if (request instanceof PlainStreamElement){
-                    connection.send((PlainStreamElement) request);
+                else if (request instanceof Nonza){
+                    connection.sendNonza((Nonza) request);
                 } else {
                     throw new IllegalStateException("Unsupported element type");
                 }
@@ -102,7 +102,7 @@ public class SynchronizationPoint<E extends Exception> {
      * @throws NoResponseException if no response was received.
      * @throws NotConnectedException if the connection is not connected.
      */
-    public void sendAndWaitForResponseOrThrow(PlainStreamElement request) throws E, NoResponseException,
+    public void sendAndWaitForResponseOrThrow(Nonza request) throws E, NoResponseException,
                     NotConnectedException, InterruptedException {
         sendAndWaitForResponse(request);
         switch (state) {
@@ -133,17 +133,17 @@ public class SynchronizationPoint<E extends Exception> {
      * Check if this synchronization point is successful or wait the connections reply timeout.
      * @throws NoResponseException if there was no response marking the synchronization point as success or failed.
      * @throws InterruptedException
-     * @return <code>true</code> if synchronization point was successful, <code>false</code> on failure.
+     * @return <code>null</code> if synchronization point was successful, or the failure Exception.
      */
-    public boolean checkIfSuccessOrWait() throws NoResponseException, InterruptedException {
+    public E checkIfSuccessOrWait() throws NoResponseException, InterruptedException {
         connectionLock.lock();
         try {
             switch (state) {
             // Return immediately on success or failure
             case Success:
-                return true;
+                return null;
             case Failure:
-                return false;
+                return failureException;
             default:
                 // Do nothing
                 break;
@@ -249,18 +249,19 @@ public class SynchronizationPoint<E extends Exception> {
      * <p>
      * The exception is thrown, if state is one of 'Initial', 'NoResponse' or 'RequestSent'
      * </p>
+     * @return <code>true</code> if synchronization point was successful, <code>false</code> on failure.
      * @throws NoResponseException
      */
-    private boolean checkForResponse() throws NoResponseException {
+    private E checkForResponse() throws NoResponseException {
         switch (state) {
         case Initial:
         case NoResponse:
         case RequestSent:
             throw NoResponseException.newWith(connection, waitFor);
         case Success:
-            return true;
+            return null;
         case Failure:
-            return false;
+            return failureException;
         default:
             throw new AssertionError("Unknown state " + state);
         }

@@ -19,6 +19,7 @@ package org.jivesoftware.smack.util;
 
 import java.io.UnsupportedEncodingException;
 import java.util.Collection;
+import java.util.Iterator;
 import java.util.Random;
 
 /**
@@ -40,18 +41,17 @@ public class StringUtils {
     public static final char[] HEX_CHARS = "0123456789abcdef".toCharArray();
 
     /**
-     * Escapes all necessary characters in the String so that it can be used
+     * Escapes all necessary characters in the CharSequence so that it can be used
      * in an XML doc.
      *
-     * @param string the string to escape.
+     * @param input the CharSequence to escape.
      * @return the string with appropriate characters escaped.
      */
-    public static CharSequence escapeForXML(final String string) {
-        if (string == null) {
+    public static CharSequence escapeForXML(final CharSequence input) {
+        if (input == null) {
             return null;
         }
-        final char[] input = string.toCharArray();
-        final int len = input.length;
+        final int len = input.length();
         final StringBuilder out = new StringBuilder((int)(len*1.3));
         CharSequence toAppend;
         char ch;
@@ -59,7 +59,7 @@ public class StringUtils {
         int i = 0;
         while (i < len) {
             toAppend = null;
-            ch = input[i];
+            ch = input.charAt(i);
             switch(ch) {
             case '<':
                 toAppend = LT_ENCODE;
@@ -81,7 +81,7 @@ public class StringUtils {
             }
             if (toAppend != null) {
                 if (i > last) {
-                    out.append(input, last, i - last);
+                    out.append(input, last, i);
                 }
                 out.append(toAppend);
                 last = ++i;
@@ -90,10 +90,10 @@ public class StringUtils {
             }
         }
         if (last == 0) {
-            return string;
+            return input;
         }
         if (i > last) {
-            out.append(input, last, i - last);
+            out.append(input, last, i);
         }
         return out;
     }
@@ -221,16 +221,33 @@ public class StringUtils {
         return cs.length() == 0;
     }
 
-    public static String collectionToString(Collection<String> collection) {
-        StringBuilder sb = new StringBuilder();
-        for (String s : collection) {
-            sb.append(s);
-            sb.append(" ");
+    /**
+     * Transform a collection of objects to a whitespace delimited String.
+     *
+     * @param collection the collection to transform.
+     * @return a String with all the elements of the collection.
+     */
+    public static String collectionToString(Collection<? extends Object> collection) {
+        return toStringBuilder(collection, " ").toString();
+    }
+
+    /**
+     * Transform a collection of objects to a delimited String.
+     *
+     * @param collection the collection to transform.
+     * @param delimiter the delimiter used to delimit the Strings.
+     * @return a StringBuilder with all the elements of the collection.
+     */
+    public static StringBuilder toStringBuilder(Collection<? extends Object> collection, String delimiter) {
+        StringBuilder sb = new StringBuilder(collection.size() * 20);
+        for (Iterator<? extends Object> it = collection.iterator(); it.hasNext();) {
+            Object cs = it.next();
+            sb.append(cs);
+            if (it.hasNext()) {
+                sb.append(delimiter);
+            }
         }
-        String res = sb.toString();
-        // Remove the trailing whitespace
-        res = res.substring(0, res.length() - 1);
-        return res;
+        return sb;
     }
 
     public static String returnIfNotEmptyTrimmed(String string) {

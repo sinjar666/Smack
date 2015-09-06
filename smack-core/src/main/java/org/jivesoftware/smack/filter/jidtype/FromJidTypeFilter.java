@@ -1,6 +1,6 @@
 /**
  *
- * Copyright © 2014 Florian Schmaus
+ * Copyright 2015 Florian Schmaus.
  *
  * Licensed under the Apache License, Version 2.0 (the "License");
  * you may not use this file except in compliance with the License.
@@ -14,15 +14,26 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
+package org.jivesoftware.smack.filter.jidtype;
 
-package org.jivesoftware.smack.packet;
+import org.jivesoftware.smack.packet.Stanza;
+import org.jxmpp.jid.Jid;
 
 /**
- * Base class for Stream elements. Everything that is not a stanza (RFC 6120 8.), ie. message,
- * presence and iq, should sublcass this class instead of {@link Stanza}.
- * 
+ * Filter based on the 'from' XMPP address type.
+ *
  * @author Florian Schmaus
+ *
  */
-public abstract class FullStreamElement implements PlainStreamElement, ExtensionElement {
+public class FromJidTypeFilter extends AbstractJidTypeFilter {
+
+    public FromJidTypeFilter(JidType jidType) {
+        super(jidType);
+    }
+
+    @Override
+    protected Jid getJidToMatchFrom(Stanza stanza) {
+        return stanza.getFrom();
+    }
 
 }
